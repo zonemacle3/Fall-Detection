@@ -21,34 +21,28 @@ class MainActivity : AppCompatActivity() {
 
         // 클릭 리스너 설정
         cardEmergencyCall.setOnClickListener {
-            // 긴급 호출 기능 구현
             Toast.makeText(this, "긴급 호출 클릭됨", Toast.LENGTH_SHORT).show()
         }
 
         cardTodayStatus.setOnClickListener {
-            // 오늘 상태 화면으로 이동 또는 정보 표시
             Toast.makeText(this, "오늘 상태 클릭됨", Toast.LENGTH_SHORT).show()
         }
 
         cardNotificationHistory.setOnClickListener {
-            //  알림 기록 화면으로 이동
             Toast.makeText(this, "알림 기록 클릭됨", Toast.LENGTH_SHORT).show()
         }
 
         cardActivityRecord.setOnClickListener {
-            //  활동 기록 화면으로 이동
             Toast.makeText(this, "활동 기록 클릭됨", Toast.LENGTH_SHORT).show()
         }
 
         cardSettings.setOnClickListener {
-            //  설정 화면으로 이동
             val intent = Intent(this, SettingsActivity::class.java)
             startActivity(intent)
             Toast.makeText(this, "설정 클릭됨", Toast.LENGTH_SHORT).show()
         }
 
         cardGuardianContact.setOnClickListener {
-            // 보호자 연락처 정보 표시 또는 전화 걸기
             Toast.makeText(this, "보호자 연락처 클릭됨", Toast.LENGTH_SHORT).show()
         }
     }
