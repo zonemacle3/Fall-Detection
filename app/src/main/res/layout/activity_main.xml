@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="@dimen/activity_horizontal_margin"
+    tools:context=".MainActivity">
+
+
+    <TextView
+        android:id="@+id/tvAppTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="72dp"
+        android:text="낙상감지"
+        android:textColor="@color/text_primary"
+        android:textSize="@dimen/app_title_size"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <GridLayout
+        android:id="@+id/gridLayout"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="108dp"
+        android:columnCount="2"
+        android:rowCount="3"
+        android:useDefaultMargins="true"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.0"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tvAppTitle">
+
+        <!-- 긴급 호출 버튼 -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/cardEmergencyCall"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_margin="4dp"
+            app:cardBackgroundColor="@color/card_background"
+            app:cardCornerRadius="@dimen/card_corner_radius"
+            app:cardElevation="@dimen/card_elevation"> <!-- useDefaultMargins 대신 직접 마진 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="@dimen/card_internal_padding">
+
+                <ImageView
+                    android:layout_width="@dimen/card_icon_size"
+                    android:layout_height="@dimen/card_icon_size"
+                    android:layout_marginBottom="@dimen/card_icon_margin_bottom"
+                    android:src="@drawable/ic_emergency_call_placeholder"
+                    app:tint="@color/icon_tint_emergency" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/emergency_call_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/card_title_size"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/emergency_call_subtitle"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/card_subtitle_size" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 오늘 상태 버튼 (위와 유사하게 CardView, LinearLayout, ImageView, TextView들 구성) -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/cardTodayStatus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_margin="4dp"
+            app:cardBackgroundColor="@color/card_background"
+            app:cardCornerRadius="@dimen/card_corner_radius"
+            app:cardElevation="@dimen/card_elevation">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="@dimen/card_internal_padding">
+
+                <ImageView
+                    android:layout_width="@dimen/card_icon_size"
+                    android:layout_height="@dimen/card_icon_size"
+                    android:layout_marginBottom="@dimen/card_icon_margin_bottom"
+                    android:src="@drawable/ic_status_placeholder"
+                    app:tint="@color/icon_tint_default" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/today_status_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/card_title_size"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/today_status_subtitle"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/card_subtitle_size" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 알림 기록 버튼 (위와 유사하게 구성) -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/cardNotificationHistory"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_margin="4dp"
+            app:cardBackgroundColor="@color/card_background"
+            app:cardCornerRadius="@dimen/card_corner_radius"
+            app:cardElevation="@dimen/card_elevation">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="@dimen/card_internal_padding">
+
+                <ImageView
+                    android:layout_width="@dimen/card_icon_size"
+                    android:layout_height="@dimen/card_icon_size"
+                    android:layout_marginBottom="@dimen/card_icon_margin_bottom"
+                    android:src="@drawable/ic_notification_placeholder"
+                    app:tint="@color/icon_tint_default" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/notification_history_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/card_title_size"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/notification_history_subtitle"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/card_subtitle_size" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 활동 기록 버튼 (위와 유사하게 구성) -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/cardActivityRecord"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_margin="4dp"
+            app:cardBackgroundColor="@color/card_background"
+            app:cardCornerRadius="@dimen/card_corner_radius"
+            app:cardElevation="@dimen/card_elevation">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="@dimen/card_internal_padding">
+
+                <ImageView
+                    android:layout_width="@dimen/card_icon_size"
+                    android:layout_height="@dimen/card_icon_size"
+                    android:layout_marginBottom="@dimen/card_icon_margin_bottom"
+                    android:src="@drawable/ic_activity_placeholder"
+                    app:tint="@color/icon_tint_default" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/activity_record_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/card_title_size"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/activity_record_subtitle"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/card_subtitle_size" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 설정 버튼 (위와 유사하게 구성) -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/cardSettings"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_margin="4dp"
+            app:cardBackgroundColor="@color/card_background"
+            app:cardCornerRadius="@dimen/card_corner_radius"
+            app:cardElevation="@dimen/card_elevation">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="@dimen/card_internal_padding">
+
+                <ImageView
+                    android:layout_width="@dimen/card_icon_size"
+                    android:layout_height="@dimen/card_icon_size"
+                    android:layout_marginBottom="@dimen/card_icon_margin_bottom"
+                    android:src="@drawable/ic_settings_placeholder"
+                    app:tint="@color/icon_tint_default" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/card_title_size"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_subtitle"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/card_subtitle_size" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 보호자 연락처 버튼 (위와 유사하게 구성) -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/cardGuardianContact"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_margin="4dp"
+            app:cardBackgroundColor="@color/card_background"
+            app:cardCornerRadius="@dimen/card_corner_radius"
+            app:cardElevation="@dimen/card_elevation">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="@dimen/card_internal_padding">
+
+                <ImageView
+                    android:layout_width="@dimen/card_icon_size"
+                    android:layout_height="@dimen/card_icon_size"
+                    android:layout_marginBottom="@dimen/card_icon_margin_bottom"
+                    android:src="@drawable/ic_contact_placeholder"
+                    app:tint="@color/icon_tint_default" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/guardian_contact_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/card_title_size"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/guardian_contact_subtitle"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/card_subtitle_size" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+    </GridLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
