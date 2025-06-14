@@ -37,7 +37,7 @@ class SettingsActivity : AppCompatActivity() {
 
     // 낙상 감지 서비스 시작 함수
     private fun startFallDetectionService() {
-        // TODO: FallDetectionService 시작 로직 구현 (Intent 사용)
+        //  FallDetectionService 시작 로직 구현 (Intent 사용)
         Log.i("SettingsActivity", "낙상 감지 서비스 시작 시도")
         val serviceIntent = Intent(this, FallDetectionService::class.java)
         // Android 8.0 이상에서는 포그라운드 서비스를 시작해야 함
@@ -50,7 +50,7 @@ class SettingsActivity : AppCompatActivity() {
 
     // 낙상 감지 서비스 중지 함수 (
     private fun stopFallDetectionService() {
-        // TODO: FallDetectionService 중지 로직 구현 (Intent 사용)
+        // FallDetectionService 중지 로직 구현 (Intent 사용)
         Log.i("SettingsActivity", "낙상 감지 서비스 중지 시도")
         val serviceIntent = Intent(this, FallDetectionService::class.java)
         stopService(serviceIntent)
