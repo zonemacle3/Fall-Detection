@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <!-- 필요에 따라 기본적인 색상 추가 -->
+    <color name="colorPrimary">#6200EE</color>
+    <color name="colorPrimaryVariant">#3700B3</color>
+    <color name="colorSecondary">#03DAC6</color>
+    <color name="app_background">#FFFFFF</color>
+    <color name="card_background">#F0F0F0</color> <!-- 약간의 구분을 위해 -->
+    <color name="text_primary">#000000</color>
+    <color name="text_secondary">#555555</color>
+    <color name="icon_tint_default">#757575</color>
+    <color name="icon_tint_emergency">#FF0000</color> <!-- 빨간색 -->
+</resources>

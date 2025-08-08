@@ -1,243 +1,587 @@
 package com.cookandroid.falldetection
 
-import android.app.* // Notification 관련 import 추가
-import android.content.Context // 추가
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
 import android.content.Intent
-import android.hardware.Sensor // 추가
-import android.hardware.SensorEvent // 추가
-import android.hardware.SensorEventListener // 추가
-import android.hardware.SensorManager // 추가
-import android.os.Build // Build 버전 체크 추가
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.os.BatteryManager
+import android.os.Build
+import android.os.Handler
 import android.os.IBinder
-import android.util.Log // 추가
-import androidx.core.app.NotificationCompat // NotificationCompat 추가
-import androidx.core.app.ServiceCompat.startForeground
-import androidx.core.app.ServiceCompat.stopForeground
-import androidx.core.content.ContextCompat.getSystemService
-import kotlin.math.sqrt // 추가
+import android.os.Looper
+import android.os.PowerManager
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import kotlin.math.sqrt
 
 class FallDetectionService : Service(), SensorEventListener {
 
+    // === 센서 관리 ===
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
+    private var gyroscope: Sensor? = null
+    private var isMonitoring = false
+    private var currentSamplingRate = SensorManager.SENSOR_DELAY_NORMAL
 
-    // --- 임계값 설정 (예시 - 실제 값은 테스트를 통해 조정 필요) ---
-    private val FREE_FALL_THRESHOLD = 0.65f // g (중력가속도) 미만이면 자유낙하 간주
-    private val IMPACT_THRESHOLD = 3.0f    // g 초과면 충격 간주_
-    private val TIME_THRESHOLD_MS = 500L  // 자유낙하와 충격 사이의 최대 시간 (밀리초)
+    // === 센서 실패 관리 ===
+    private var sensorFailureCount = 0
+    private val MAX_SENSOR_FAILURES = 5
+    private lateinit var sensorRestartHandler: Handler
+
+    // === 배터리 관리 ===
+    private lateinit var batteryManager: BatteryManager
+    private lateinit var powerManager: PowerManager
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    // === 낙상 감지 임계값 ===
+    private val FREE_FALL_THRESHOLD = 0.65f // g
+    private val IMPACT_THRESHOLD = 3.0f // g
+    private val GYRO_THRESHOLD = 35.0f // degrees/second
+    private val TIME_THRESHOLD_MS = 500L // ms
+    private val POST_IMPACT_DURATION = 3000L // ms
+    private val POST_IMPACT_STILLNESS_THRESHOLD = 1.1f // g
+
+    // === 낙상 상태 추적 ===
     private var lastFreeFallTime = 0L
     private var isFreeFallDetected = false
-    // ----------------------------------------------------------
+    private var postImpactStartTime = 0L
+    private var isPostImpactMonitoring = false
+    private var postImpactHandler = Handler(Looper.getMainLooper())
+    private var stillnessReadings = mutableListOf<Float>()
 
-    // --- Notification 관련 상수 ---
+    // === 자이로스코프 데이터 ===
+    private var lastGyroMagnitude = 0f
+    private var gyroReadings = mutableListOf<Float>()
+
+    // === 알림 관련 ===
     private val NOTIFICATION_CHANNEL_ID = "FallDetectionChannel"
-    private val NOTIFICATION_ID = 1 // 포그라운드 서비스 알림 ID
-    // ---------------------------
+    private val NOTIFICATION_ID = 1
+    private val PERMISSION_NOTIFICATION_ID = 2
 
     override fun onCreate() {
         super.onCreate()
         Log.d("FallDetectionService", "onCreate 호출됨")
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
-        // Android 8.0 이상 알림 채널 생성
+        initializeManagers()
+        initializeSensors()
         createNotificationChannel()
+        sensorRestartHandler = Handler(Looper.getMainLooper())
+    }
+
+    private fun initializeManagers() {
+        batteryManager = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    }
+
+    private fun initializeSensors() {
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) // 가속도
+        gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE) // 자이로스코프
+
+        if (accelerometer == null) {
+            Log.e("FallDetectionService", "가속도 센서를 찾을 수 없습니다.")
+        }
+        if (gyroscope == null) {
+            Log.w("FallDetectionService", "자이로스코프 센서를 찾을 수 없습니다.")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d("FallDetectionService", "onStartCommand 호출됨")
 
-        // --- Foreground Service 시작 로직 ---
-        val notification = createNotification()
-        // startForegroundService() 호출 후 5초 이내에 startForeground()를 호출해야 함
-        startForeground(NOTIFICATION_ID, notification)
-        Log.d("FallDetectionService", "startForeground 호출됨")
-        // ---------------------------------
+        // 필수 권한 확인
+        if (!checkRequiredPermissions()) {
+            Log.e("FallDetectionService", "필수 권한이 부여되지 않음")
+            sendPermissionRequiredNotification()
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
-        startSensorMonitoring() // 센서 모니터링 시작
+        // 포그라운드 서비스 시작
+        startForegroundService()
 
-        // 서비스가 시스템에 의해 종료될 경우 자동으로 재시작하도록 설정
+        // 배터리 최적화 확인
+        checkBatteryOptimization()
+
+        // 센서 모니터링 시작
+        startSensorMonitoring()
+
+        // Wake Lock 획득
+        acquireWakeLock()
+
         return START_STICKY
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        Log.d("FallDetectionService", "onDestroy 호출됨")
-        stopSensorMonitoring() // 센서 모니터링 중지
-        // 포그라운드 서비스 종료 시 알림 제거 (선택적, false는 알림 유지, true는 알림 제거)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(Service.STOP_FOREGROUND_REMOVE) // API 24 이상
+    private fun checkRequiredPermissions(): Boolean {
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(
+                Manifest.permission.BODY_SENSORS,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.POST_NOTIFICATIONS
+            )
         } else {
-            // API 24 미만에서는 stopForeground(true) 사용 불가, 필요시 NotificationManager로 직접 제거
-            stopForeground(true) // 이 버전에서는 알림 제거 의미
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
-        Log.d("FallDetectionService", "포그라운드 서비스 종료됨")
+
+        return permissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
     }
 
-    override fun onBind(intent: Intent?): IBinder? {
-        // Binding을 사용하지 않으므로 null 반환
-        return null
+    private fun startForegroundService() {
+        val notification = createNotification()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+
+        Log.d("FallDetectionService", "포그라운드 서비스 시작됨")
     }
 
-    // --- 알림 채널 생성 (Android 8.0 이상) ---
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                "낙상 감지 서비스 채널", // 사용자 설정에 표시될 채널 이름
-                NotificationManager.IMPORTANCE_DEFAULT // 중요도 (소리/진동 없이 조용한 알림 등 설정 가능)
-            ).apply {
-                description = "백그라운드에서 낙상 감지를 실행합니다." // 채널 설명 (선택적)
-                // 채널에 대한 추가 설정 가능 (예: setSound, enableVibration 등)
+
+    private fun checkBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                Log.w("FallDetectionService", "배터리 최적화 예외 설정이 권장됩니다.")
+                sendBatteryOptimizationNotification()
             }
-
-            val manager = getSystemService(NotificationManager::class.java)
-            if (manager == null) {
-                Log.e("FallDetectionService", "NotificationManager 가져오기 실패")
-                return
-            }
-            manager.createNotificationChannel(serviceChannel)
-            Log.d("FallDetectionService", "알림 채널 생성됨: $NOTIFICATION_CHANNEL_ID")
         }
     }
-    // ----------------------------------------
 
-    // --- 포그라운드 서비스 알림 생성 ---
-    private fun createNotification(): Notification {
-        // 알림 클릭 시 MainActivity를 열도록 Intent 설정
-        val notificationIntent = Intent(this, MainActivity::class.java).apply {
-            // 필요시 플래그 추가 (예: 앱이 이미 실행 중일 때 새 인스턴스 대신 기존 인스턴스 가져오기)
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-
-        // PendingIntent 생성 (Android 12 이상에서는 FLAG_IMMUTABLE 또는 FLAG_MUTABLE 명시 필요)
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0, // requestCode (여러 PendingIntent 구분 시 사용)
-            notificationIntent,
-            PendingIntent.FLAG_IMMUTABLE // 변경 불가능한 PendingIntent
-        )
-
-        // 알림 빌더를 사용하여 알림 객체 생성
-        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("낙상 감지 서비스") // 알림 제목
-            .setContentText("낙상 감지 기능이 활성화되어 백그라운드에서 실행 중입니다.") // 알림 내용
-            .setContentIntent(pendingIntent) // 알림 클릭 시 실행할 Intent
-            .setOngoing(true) // 사용자가 알림을 쉽게 지울 수 없도록 설정 (선택적)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT) // 알림 중요도
-            .build() // Notification 객체 생성
-
-        Log.d("FallDetectionService", "포그라운드 서비스 알림 생성됨")
-        return notification
-    }
-    // -----------------------------------
-
-    // --- 센서 모니터링 시작 ---
     private fun startSensorMonitoring() {
-        if (accelerometer == null) {
-            Log.w("FallDetectionService", "가속도 센서를 찾을 수 없습니다.")
-            // 사용자에게 알림 또는 서비스 중지 등의 처리 필요
-            stopSelf() // 센서 없으면 서비스 중지
+        if (isMonitoring) {
+            Log.w("FallDetectionService", "이미 센서 모니터링 중입니다.")
             return
         }
-        // 센서 리스너 등록 (SENSOR_DELAY_NORMAL은 일반적인 속도, 더 민감하게 하려면 SENSOR_DELAY_GAME, SENSOR_DELAY_FASTEST 사용 가능하나 배터리 소모 증가)
-        val registered = sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
-        if (registered) {
-            Log.d("FallDetectionService", "가속도 센서 리스너 등록 성공")
+
+        if (accelerometer == null) {
+            Log.e("FallDetectionService", "가속도 센서 없음 - 서비스 중지")
+            stopSelf()
+            return
+        }
+
+        val samplingRate = getOptimalSamplingRate()
+        currentSamplingRate = samplingRate
+
+        // 가속도 센서 등록
+        val accelRegistered = sensorManager.registerListener(
+            this, accelerometer, samplingRate
+        )
+
+        // 자이로스코프 센서 등록 (있는 경우)
+        var gyroRegistered = true
+        gyroscope?.let {
+            gyroRegistered = sensorManager.registerListener(this, it, samplingRate)
+        }
+
+        if (accelRegistered) {
+            isMonitoring = true
+            sensorFailureCount = 0
+            Log.d("FallDetectionService", "센서 모니터링 시작됨 (샘플링 주기: $samplingRate)")
+
+            // 주기적으로 배터리 상태 확인 및 샘플링 주기 조정
+            startBatteryMonitoring()
         } else {
-            Log.e("FallDetectionService", "가속도 센서 리스너 등록 실패")
-            stopSelf() // 등록 실패 시 서비스 중지
+            Log.e("FallDetectionService", "센서 등록 실패")
+            stopSelf()
         }
     }
-    // -------------------------
 
-    // --- 센서 모니터링 중지 ---
-    private fun stopSensorMonitoring() {
-        try {
+    private fun getOptimalSamplingRate(): Int {
+        val batteryLevel = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        val isCharging = isDeviceCharging()
+
+        return when {
+            // isCharging -> SensorManager.SENSOR_DELAY_GAME // 충전 중이면 고성능
+            batteryLevel > 20 -> SensorManager.SENSOR_DELAY_GAME //
+            else -> {
+                Log.w("FallDetectionService", "배터리 부족 - 절전 모드")
+                SensorManager.SENSOR_DELAY_NORMAL // 기능 유지하되 절전
+            }
+        }
+    }
+
+    private fun isDeviceCharging(): Boolean {
+        val status = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
+        return status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+    }
+
+    private fun startBatteryMonitoring() {
+        sensorRestartHandler.postDelayed({
+            if (isMonitoring) {
+                adjustSamplingBasedOnBattery()
+                startBatteryMonitoring() // 재귀 호출로 주기적 체크
+            }
+        }, 30000) // 30초마다 체크
+    }
+
+    private fun adjustSamplingBasedOnBattery() {
+        val newSamplingRate = getOptimalSamplingRate()
+
+        if (newSamplingRate != currentSamplingRate) {
+            Log.d("FallDetectionService", "샘플링 주기 변경: $currentSamplingRate -> $newSamplingRate")
+
+            // 센서 재등록
             sensorManager.unregisterListener(this)
-            Log.d("FallDetectionService", "가속도 센서 리스너 해제됨")
-        } catch (e: Exception) {
-            Log.e("FallDetectionService", "센서 리스너 해제 중 오류 발생", e)
+            sensorManager.registerListener(this, accelerometer, newSamplingRate)
+            gyroscope?.let {
+                sensorManager.registerListener(this, it, newSamplingRate)
+            }
+
+            currentSamplingRate = newSamplingRate
         }
     }
-    // -------------------------
 
-    // --- SensorEventListener 인터페이스 구현 ---
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // 센서 정확도가 변경되었을 때 호출됨 (일반적으로 특별한 처리 불필요)
-        Log.d("FallDetectionService", "센서 정확도 변경: ${sensor?.name}, 정확도: $accuracy")
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "FallDetection::Service"
+        ).apply {
+            acquire(10 * 60 * 1000L) // 10분 제한
+        }
+
+        Log.d("FallDetectionService", "WakeLock 획득됨")
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        // 센서 값이 변경될 때마다 호출됨
-        if (event?.sensor?.type == Sensor.TYPE_ACCELEROMETER) {
-            val x = event.values[0]
-            val y = event.values[1]
-            val z = event.values[2]
-
-            // 중력 가속도를 포함한 전체 가속도 벡터 크기 계산 (m/s^2)
-            val accelerationMagnitudeRaw = sqrt((x*x + y*y + z*z).toDouble())
-            // g 단위로 변환 (1g = 약 9.8 m/s^2)
-            val accelerationMagnitudeG = accelerationMagnitudeRaw / SensorManager.GRAVITY_EARTH
-
-            // Log.v("FallDetectionService", "가속도 값: x=$x, y=$y, z=$z, 크기(g)=${String.format("%.2f", accelerationMagnitudeG)}") // 너무 자주 로깅되므로 필요 시에만 사용
-
-            // --- 임계값 기반 낙상 감지 로직 ---
-            val currentTime = System.currentTimeMillis()
-
-            // 1. 자유 낙하 감지 (특정 g 값 미만)
-            if (accelerationMagnitudeG < FREE_FALL_THRESHOLD) {
-                if (!isFreeFallDetected) {
-                    // 처음 자유 낙하 상태 진입
-                    isFreeFallDetected = true
-                    lastFreeFallTime = currentTime
-                    Log.i("FallDetectionService", "자유 낙하 상태 시작됨: ${String.format("%.2f", accelerationMagnitudeG)}g")
-                }
-                // 자유 낙하 상태가 지속되는 동안 시간 갱신 (선택적)
-                // lastFreeFallTime = currentTime
-            } else { // 자유 낙하 상태가 아닐 때
-                // 2. 충격 감지 (이전에 자유 낙하가 감지되었던 경우에만 확인)
-                if (isFreeFallDetected) {
-                    if (accelerationMagnitudeG > IMPACT_THRESHOLD) {
-                        Log.i("FallDetectionService", "충격 감지됨: ${String.format("%.2f", accelerationMagnitudeG)}g")
-                        // 3. 시간 임계값 확인 (자유 낙하 시작 후 너무 오래되지 않았는지)
-                        if (currentTime - lastFreeFallTime <= TIME_THRESHOLD_MS) {
-                            Log.w("FallDetectionService", "*** 낙상 감지됨! (시간차: ${currentTime - lastFreeFallTime}ms) ***")
-                            // 낙상 후 처리 로직 호출
-                            handleFallDetected()
-                            // 낙상 처리 후에는 자유 낙하 상태 초기화
-                            isFreeFallDetected = false
-                        } else {
-                            Log.d("FallDetectionService", "충격 감지되었으나 시간 초과: ${currentTime - lastFreeFallTime}ms")
-                            // 시간 초과 시 자유 낙하 상태 초기화
-                            isFreeFallDetected = false
-                        }
-                    } else {
-                        // 자유 낙하 후 충격 임계값 미만의 가속도가 감지된 경우
-                        // (예: 살짝 내려놓거나 정상 활동 복귀)
-                        // 시간 임계값 지나면 초기화 (선택적 - 바로 초기화 할 수도 있음)
-                        if (currentTime - lastFreeFallTime > TIME_THRESHOLD_MS) {
-                            Log.d("FallDetectionService", "자유 낙하 후 시간 초과로 상태 초기화")
-                            isFreeFallDetected = false
-                        }
-                    }
-                }
-                // else -> 자유 낙하 감지 안 된 상태에서 일반적인 움직임은 무시
+        try {
+            if (event == null) {
+                handleSensorFailure()
+                return
             }
-            // ---------------------------------
+
+            when (event.sensor.type) {
+                Sensor.TYPE_ACCELEROMETER -> {
+                    processAccelerometerData(event.values)
+                }
+
+                Sensor.TYPE_GYROSCOPE -> {
+                    processGyroscopeData(event.values)
+                }
+            }
+
+            // 성공적으로 처리되면 실패 카운터 리셋
+            sensorFailureCount = 0
+
+        } catch (e: Exception) {
+            handleSensorFailure()
+            Log.e("FallDetectionService", "센서 데이터 처리 오류", e)
         }
     }
-    // ------------------------------------------
 
-    // --- 낙상 감지 후 처리 함수 ---
+    private fun processAccelerometerData(values: FloatArray) {
+        val x = values[0]
+        val y = values[1]
+        val z = values[2]
+
+        val accelerationMagnitude = sqrt((x * x + y * y + z * z).toDouble())
+        val accelerationG = (accelerationMagnitude / SensorManager.GRAVITY_EARTH).toFloat()
+
+        // 포스트 임팩트 모니터링 중이면 정적 상태 확인
+        if (isPostImpactMonitoring) {
+            stillnessReadings.add(accelerationG)
+            if (stillnessReadings.size > 20) { // 최근 20개 값만 유지
+                stillnessReadings.removeAt(0)
+            }
+        }
+
+        detectFall(accelerationG)
+    }
+
+    private fun processGyroscopeData(values: FloatArray) {
+        val x = values[0]
+        val y = values[1]
+        val z = values[2]
+
+        val gyroMagnitude = sqrt((x * x + y * y + z * z).toDouble())
+        // 라디안/초를 도/초로 변환
+        lastGyroMagnitude = Math.toDegrees(gyroMagnitude).toFloat()
+
+        gyroReadings.add(lastGyroMagnitude)
+        if (gyroReadings.size > 10) { // 최근 10개 값만 유지
+            gyroReadings.removeAt(0)
+        }
+    }
+
+    private fun detectFall(accelerationG: Float) {
+        val currentTime = System.currentTimeMillis()
+
+        // 1단계: 자유낙하 감지
+        if (accelerationG < FREE_FALL_THRESHOLD) {
+            if (!isFreeFallDetected) {
+                isFreeFallDetected = true
+                lastFreeFallTime = currentTime
+                Log.i("FallDetectionService", "자유낙하 시작: ${String.format("%.2f", accelerationG)}g")
+            }
+        } else {
+            // 2단계: 충격 감지
+            if (isFreeFallDetected && accelerationG > IMPACT_THRESHOLD) {
+                val timeDiff = currentTime - lastFreeFallTime
+
+                if (timeDiff <= TIME_THRESHOLD_MS) {
+                    // 3단계: 자이로스코프 확인 (있는 경우)
+                    val gyroCondition = if (gyroscope != null) {
+                        val avgGyro = gyroReadings.average().toFloat()
+                        avgGyro > GYRO_THRESHOLD
+                    } else {
+                        true // 자이로스코프 없으면 통과
+                    }
+
+                    if (gyroCondition) {
+                        Log.w(
+                            "FallDetectionService",
+                            "낙상 의심 감지! (시간차: ${timeDiff}ms, 자이로: ${lastGyroMagnitude}°/s)"
+                        )
+                        startPostImpactVerification()
+                    } else {
+                        Log.d("FallDetectionService", "자이로스코프 조건 미충족으로 무시")
+                    }
+                } else {
+                    Log.d("FallDetectionService", "시간 초과로 무시: ${timeDiff}ms")
+                }
+
+                isFreeFallDetected = false
+            } else if (currentTime - lastFreeFallTime > TIME_THRESHOLD_MS) {
+                isFreeFallDetected = false
+            }
+        }
+    }
+
+    private fun startPostImpactVerification() {
+        postImpactStartTime = System.currentTimeMillis()
+        isPostImpactMonitoring = true
+        stillnessReadings.clear()
+
+        Log.i("FallDetectionService", "포스트 임팩트 검증 시작")
+
+        // 3초 후 최종 확인
+        postImpactHandler.postDelayed({
+            if (isPostImpactMonitoring) {
+                confirmFallDetection()
+            }
+        }, POST_IMPACT_DURATION)
+    }
+
+    private fun confirmFallDetection() {
+        isPostImpactMonitoring = false
+
+        // 정적 상태 분석
+        if (stillnessReadings.isNotEmpty()) {
+            val avgStillness = stillnessReadings.average().toFloat()
+            val maxStillness = stillnessReadings.maxOrNull() ?: 0f
+
+            // 대부분의 시간 동안 정적 상태였는지 확인
+            val stillnessCount = stillnessReadings.count { it < POST_IMPACT_STILLNESS_THRESHOLD }
+            val stillnessRatio = stillnessCount.toFloat() / stillnessReadings.size
+
+            Log.d(
+                "FallDetectionService", "정적 상태 분석 - 평균: ${String.format("%.2f", avgStillness)}g, " +
+                        "최대: ${String.format("%.2f", maxStillness)}g, 비율: ${
+                            String.format(
+                                "%.2f",
+                                stillnessRatio
+                            )
+                        }"
+            )
+
+            if (stillnessRatio > 0.7f) { // 70% 이상 정적 상태
+                Log.w("FallDetectionService", "*** 낙상 최종 확정! ***")
+                handleFallDetected()
+            } else {
+                Log.i("FallDetectionService", "활동 지속으로 오탐지 판정")
+            }
+        } else {
+            Log.w("FallDetectionService", "데이터 부족으로 낙상 의심 처리")
+            handleFallDetected() // 데이터 없으면 안전을 위해 확정
+        }
+
+        stillnessReadings.clear()
+    }
+
     private fun handleFallDetected() {
-        Log.i("FallDetectionService", "handleFallDetected 호출됨")
+        Log.i("FallDetectionService", "낙상 확정 - FallConfirmationActivity 시작")
 
-        // FallConfirmationActivity 실행
         val confirmationIntent = Intent(this, FallConfirmationActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         startActivity(confirmationIntent)
     }
-    // ---------------------------
+
+    private fun handleSensorFailure() {
+        sensorFailureCount++
+        Log.w("FallDetectionService", "센서 실패 횟수: $sensorFailureCount")
+
+        if (sensorFailureCount >= MAX_SENSOR_FAILURES) {
+            Log.e("FallDetectionService", "센서 실패 한계 초과 - 재시작 시도")
+            restartSensorMonitoring()
+        }
+    }
+
+    private fun restartSensorMonitoring() {
+        stopSensorMonitoring()
+
+        // 1초 후 재시작 시도
+        sensorRestartHandler.postDelayed({
+            if (!isMonitoring) {
+                Log.i("FallDetectionService", "센서 모니터링 재시작 시도")
+                startSensorMonitoring()
+            }
+        }, 1000)
+    }
+
+    private fun stopSensorMonitoring() {
+        if (!isMonitoring) return
+
+        try {
+            sensorManager.unregisterListener(this)
+            isMonitoring = false
+            Log.d("FallDetectionService", "센서 모니터링 중지됨")
+        } catch (e: Exception) {
+            Log.e("FallDetectionService", "센서 리스너 해제 중 오류", e)
+        }
+    }
+
+    // 알림 관련 메서드들
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val serviceChannel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "낙상 감지 서비스",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "백그라운드에서 낙상 감지를 실행합니다."
+                setShowBadge(false)
+            }
+
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(serviceChannel)
+
+            Log.d("FallDetectionService", "알림 채널 생성됨")
+        }
+    }
+
+    private fun createNotification(): Notification {
+        val notificationIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val batteryLevel = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        val isCharging = isDeviceCharging()
+
+        val contentText = if (isCharging) {
+            "낙상 감지 활성화 - 충전 중 (배터리: ${batteryLevel}%)"
+        } else {
+            "낙상 감지 활성화 - 배터리: ${batteryLevel}%"
+        }
+
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("낙상 감지 서비스")
+            .setContentText(contentText)
+            .setSmallIcon(R.drawable.ic_fall_detection) // ← 여기에 적용
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setShowWhen(false)
+            .build()
+    }
+
+
+    private fun sendPermissionRequiredNotification() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            putExtra("request_permissions", true)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent, PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("권한 필요")
+            .setContentText("낙상 감지 서비스를 위해 권한이 필요합니다.")
+            .setSmallIcon(R.drawable.ic_fall_detection) // ← 여기에 적용
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.notify(PERMISSION_NOTIFICATION_ID, notification)
+    }
+
+
+    private fun sendBatteryOptimizationNotification() {
+        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("배터리 최적화 설정 권장")
+            .setContentText("더 안정적인 낙상 감지를 위해 배터리 최적화 예외 설정을 권장합니다.")
+            .setSmallIcon(R.drawable.ic_fall_detection) // ← 여기에 적용
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.notify(PERMISSION_NOTIFICATION_ID + 1, notification)
+    }
+
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        Log.d("FallDetectionService", "센서 정확도 변경: ${sensor?.name}, 정확도: $accuracy")
+
+        if (accuracy == SensorManager.SENSOR_STATUS_UNRELIABLE) {
+            Log.w("FallDetectionService", "센서 정확도 낮음 - 재보정 필요할 수 있음")
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d("FallDetectionService", "onDestroy 호출됨")
+
+        // 센서 모니터링 중지
+        stopSensorMonitoring()
+
+        // 핸들러 정리
+        sensorRestartHandler.removeCallbacksAndMessages(null)
+        postImpactHandler.removeCallbacksAndMessages(null)
+
+        // Wake Lock 해제
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+                Log.d("FallDetectionService", "WakeLock 해제됨")
+            }
+        }
+
+        // 포그라운드 서비스 중지
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(Service.STOP_FOREGROUND_REMOVE)
+        } else {
+            stopForeground(true)
+        }
+
+        Log.d("FallDetectionService", "서비스 완전 종료됨")
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
 }

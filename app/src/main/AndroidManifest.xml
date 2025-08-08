@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- 포그라운드 서비스 실행 권한 (Android 9 이상) -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" /> <!-- Android 12 이상에서 정확한 알람/스케줄링 관련 권한 (필요할 수 있음) -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" /> <!-- Android 14 이상 Foreground Service 유형 명시 필요 -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" /> <!-- 예시, 적절한 타입 선택 필요 -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> <!-- Android 13 이상 알림 권한 -->
 
+    <!-- 필수 권한들 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="true"
@@ -18,6 +22,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.FallDetection"
         tools:targetApi="31">
+
         <activity
             android:name=".FallConfirmationActivity"
             android:exported="false"
@@ -26,9 +31,9 @@
 
         <service
             android:name=".FallDetectionService"
+            android:foregroundServiceType="health"
             android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"></service>
+            android:exported="false" />
 
         <activity
             android:name=".SettingsActivity"
@@ -43,7 +48,6 @@
             android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>

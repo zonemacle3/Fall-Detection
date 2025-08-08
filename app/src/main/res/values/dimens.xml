@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 기본 여백 및 크기 -->
+    <dimen name="activity_horizontal_margin">16dp</dimen>
+    <dimen name="activity_vertical_margin">16dp</dimen>
+    <dimen name="grid_spacing">16dp</dimen>
+
+
+    <!-- 앱 타이틀 -->
+    <dimen name="app_title_size">24sp</dimen>
+    <dimen name="app_title_margin_bottom">50dp</dimen>
+
+    <!-- 카드뷰 -->
+    <dimen name="card_corner_radius">8dp</dimen>
+    <dimen name="card_elevation">2dp</dimen>
+    <dimen name="card_internal_padding">16dp</dimen>
+
+    <!-- 카드 내부 요소 -->
+    <dimen name="card_icon_size">40dp</dimen>
+    <dimen name="card_icon_margin_bottom">8dp</dimen>
+    <dimen name="card_title_size">16sp</dimen>
+    <dimen name="card_subtitle_size">12sp</dimen>
+</resources>

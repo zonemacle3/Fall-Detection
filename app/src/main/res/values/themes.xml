@@ -1,0 +1,17 @@
+<resources>
+    <!-- Base application theme. -->
+    <!-- 프로젝트 생성 시 기본 테마 이름을 사용할 수 있습니다. 예: Theme.FallDetection -->
+    <style name="Theme.FallDetection" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryVariant">@color/colorPrimaryVariant</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">@color/colorSecondary</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <!-- Status bar color. -->
+        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+        <!-- Customize your theme here. -->
+        <item name="android:background">@color/app_background</item>
+    </style>
+</resources>

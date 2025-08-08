@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">SeniorCareApp</string>
+    <string name="app_main_title">Test</string> <!-- 또는 "시니어A긱" 등 초기 이름 -->
+
+    <string name="emergency_call_title">긴급 호출</string>
+    <string name="emergency_call_subtitle">119 호출</string>
+
+    <string name="today_status_title">오늘 상태</string>
+    <string name="today_status_subtitle">이상 없음</string>
+
+    <string name="notification_history_title">알림 기록</string>
+    <string name="notification_history_subtitle">최근 낙상 없음</string>
+
+    <string name="activity_record_title">활동 기록</string>
+    <string name="activity_record_subtitle">걸음 수 1,230</string>
+
+    <string name="settings_title">설정</string>
+    <string name="settings_subtitle">글자 크기 조절</string>
+
+    <string name="guardian_contact_title">보호자 연락처</string>
+    <string name="guardian_contact_subtitle">홍길동 010-****</string>
+    <string name="title_activity_settings">SettingsActivity</string>
+    <string name="title_activity_fall_confirmation">FallConfirmationActivity</string>
+</resources>
